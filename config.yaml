@@ -1,0 +1,5 @@
+# Global server configuration
+server:
+  port: 8082 
+  refresh_period: 480 # Scraping refresh in minutes
+
