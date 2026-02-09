@@ -1,0 +1,11 @@
+services:
+  scrape2rss:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: scrape2rss
+    ports:
+      - "8082:8082"
+    restart: unless-stopped
+    volumes:
+      - /data/scrape2rss/rss.sqlite:/app/rss.sqlite:rw
