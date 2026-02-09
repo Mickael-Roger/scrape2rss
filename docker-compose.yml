@@ -4,8 +4,21 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: scrape2rss
+    restart: unless-stopped
     ports:
       - "8082:8082"
     restart: unless-stopped
     volumes:
       - /data/scrape2rss/rss.sqlite:/app/rss.sqlite:rw
+
+  freshrss:
+    image: freshrss/freshrss:latest
+    container_name: freshrss
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    volumes:
+      - /data/freshrss/:/var/www/FreshRSS/data/
+    environment:
+      TZ: Europe/Paris
+      CRON_MIN: "*/30"
