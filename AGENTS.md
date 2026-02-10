@@ -12,6 +12,10 @@ Scrape2RSS is a Python web server that exposes RSS feeds for websites that do no
 ## Implemented scrapers
 
 - `websites/arthurchiao.py`: scrapes https://arthurchiao.art/articles/ by parsing HTML (`#articles ul.posts > li`) and extracts article date/title/url.
+- `websites/anthropic_engineering.py`: scrapes https://www.anthropic.com/engineering by parsing engineering article cards (`article a[href^='/engineering/']`) and extracts article date/title/url.
+- `websites/anthropic_research.py`: scrapes https://www.anthropic.com/research by parsing research cards (`main a[href^='/research/']:not([href^='/research/team/'])`) and extracts article date/title/url.
+- `websites/google_developers_ai.py`: scrapes https://developers.googleblog.com/search/?technology_categories=AI by parsing search result cards (`div.search-results__results-wrapper ul > li.search-result`) and extracts article date/title/url.
+- `websites/little_joe.py`: scrapes https://blog.littlejo.link/ by parsing recent article cards (`section.space-y-10.w-full > article`) and extracts article date/title/url.
 
 ## Containerization
 
