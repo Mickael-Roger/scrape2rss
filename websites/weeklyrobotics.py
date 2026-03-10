@@ -86,49 +86,11 @@ class WeeklyRobotics(WebsiteScraper):
 
                     skip_sections = ["our sponsors", "events", "want to promote"]
 
-                    for child in content_div.children:
-                        if child.name in ["h2", "h3"]:
-                            if current_title:
-                                summary_text = " ".join(current_summary_parts).strip()
-                                if summary_text:
-                                    articles.append(
-                                        Article(
-                                            id=current_link or current_title,
-                                            title=current_title,
-                                            url=current_link or fallback_url,
-                                            published=published,
-                                            summary=summary_text[:500],
-                                        )
-                                    )
-                            current_title = child.get_text(strip=True)
-                            if any(
-                                current_title.lower().startswith(s)
-                                for s in skip_sections
-                            ):
-                                current_title = None
-                                current_link = None
-                                current_summary_parts = []
-                                continue
-                            link_elem = child.find("a", href=True)
-                            if link_elem:
-                                href = link_elem["href"].strip()
-                                if href.startswith("/"):
-                                    current_link = f"{self.BASE_URL}{href}"
-                                else:
-                                    current_link = href
-                            current_summary_parts = []
-                        elif child.name == "p" and current_title:
-                            text = child.get_text(strip=True)
-                            if text:
-                                current_summary_parts.append(text)
-                        elif child.name == "picture" and current_title:
-                            img = child.find("img")
-                            if img and img.get("alt"):
-                                current_summary_parts.append(
-                                    f"[Image: {img.get('alt')}]"
-                                )
-
-                    if current_title:
+                    def _flush_article():
+                        """Append the current article to the list if valid."""
+                        nonlocal current_title, current_link, current_summary_parts
+                        if not current_title:
+                            return
                         summary_text = " ".join(current_summary_parts).strip()
                         if summary_text:
                             articles.append(
@@ -140,6 +102,52 @@ class WeeklyRobotics(WebsiteScraper):
                                     summary=summary_text[:500],
                                 )
                             )
+
+                    for child in content_div.children:
+                        if child.name in ["h2", "h3"]:
+                            _flush_article()
+                            current_title = child.get_text(strip=True)
+                            if any(
+                                current_title.lower().startswith(s)
+                                for s in skip_sections
+                            ):
+                                current_title = None
+                                current_link = None
+                                current_summary_parts = []
+                                continue
+                            # Try to get a link from the heading itself
+                            link_elem = child.find("a", href=True)
+                            if link_elem:
+                                href = link_elem["href"].strip()
+                                if href.startswith("/"):
+                                    current_link = f"{self.BASE_URL}{href}"
+                                else:
+                                    current_link = href
+                            else:
+                                current_link = None
+                            current_summary_parts = []
+                        elif child.name == "div" and current_title:
+                            # Extract the source URL from learn-more-container
+                            if "learn-more-container" in (child.get("class") or []):
+                                source_link = child.find("a", href=True)
+                                if source_link:
+                                    href = source_link["href"].strip()
+                                    if href.startswith("/"):
+                                        current_link = f"{self.BASE_URL}{href}"
+                                    else:
+                                        current_link = href
+                        elif child.name == "p" and current_title:
+                            text = child.get_text(strip=True)
+                            if text:
+                                current_summary_parts.append(text)
+                        elif child.name == "picture" and current_title:
+                            img = child.find("img")
+                            if img and img.get("alt"):
+                                current_summary_parts.append(
+                                    f"[Image: {img.get('alt')}]"
+                                )
+
+                    _flush_article()
 
                 except requests.RequestException as e:
                     print(f"Error: Network error fetching {issue_url}: {str(e)}")
