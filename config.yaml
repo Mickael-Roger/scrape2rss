@@ -3,3 +3,14 @@ server:
   port: 8082 
   refresh_period: 480 # Scraping refresh in minutes
 
+# Optional newsletter-to-RSS ingestion.
+# The IMAP poller only starts when this section is uncommented and complete.
+# newsletter:
+#   imap:
+#     host: imap.example.com
+#     port: 993
+#     username: newsletters@example.com
+#     password: change-me
+#     mailbox: INBOX
+#     processed_mailbox: INBOX/Newsletter
+#     refresh_period: 5 # IMAP refresh in minutes

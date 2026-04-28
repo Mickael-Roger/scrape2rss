@@ -2,10 +2,15 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from email import message_from_bytes, policy
+from email.message import EmailMessage
+from email.utils import parseaddr
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import imaplib
 import importlib.util
 from pathlib import Path
+import re
 import sqlite3
 import sys
 import threading
@@ -38,17 +43,55 @@ class WebsiteScraper(ABC):
         raise NotImplementedError
 
 
+class NewsletterParser(ABC):
+    meta: WebsiteMeta
+    sender_email: str
+    subject_regex: str | None = None
+
+    def matches(self, sender_email: str, subject: str) -> bool:
+        if sender_email.lower() != self.sender_email.lower():
+            return False
+        if self.subject_regex is None:
+            return True
+        return re.search(self.subject_regex, subject) is not None
+
+    @abstractmethod
+    def parse_email(self, message: EmailMessage) -> Sequence[Article]:
+        raise NotImplementedError
+
+
 def discover_scrapers(websites_dir: Path | None = None) -> list[type[WebsiteScraper]]:
-    base_dir = websites_dir or Path(__file__).with_name("websites")
+    return discover_modules(
+        WebsiteScraper,
+        websites_dir or Path(__file__).with_name("websites"),
+        "websites",
+    )
+
+
+def discover_newsletter_parsers(
+    newsletter_dir: Path | None = None,
+) -> list[type[NewsletterParser]]:
+    return discover_modules(
+        NewsletterParser,
+        newsletter_dir or Path(__file__).with_name("newsletter"),
+        "newsletter",
+    )
+
+
+def discover_modules[T](
+    base_class: type[T],
+    base_dir: Path,
+    package_name: str,
+) -> list[type[T]]:
     if not base_dir.exists():
         return []
 
-    scrapers: list[type[WebsiteScraper]] = []
+    discovered: list[type[T]] = []
     for module_path in sorted(base_dir.glob("*.py")):
         if module_path.name == "__init__.py":
             continue
 
-        module_name = f"websites.{module_path.stem}"
+        module_name = f"{package_name}.{module_path.stem}"
         spec = importlib.util.spec_from_file_location(module_name, module_path)
         if spec is None or spec.loader is None:
             continue
@@ -60,12 +103,12 @@ def discover_scrapers(websites_dir: Path | None = None) -> list[type[WebsiteScra
         for obj in module.__dict__.values():
             if (
                 isinstance(obj, type)
-                and issubclass(obj, WebsiteScraper)
-                and obj is not WebsiteScraper
+                and issubclass(obj, base_class)
+                and obj is not base_class
             ):
-                scrapers.append(obj)
+                discovered.append(obj)
 
-    return scrapers
+    return discovered
 
 
 def load_config(config_path: Path | None = None) -> dict:
@@ -115,9 +158,11 @@ def init() -> dict:
             """
         )
 
-        scrapers = discover_scrapers()
-        for scraper_cls in scrapers:
-            meta = scraper_cls.meta
+        feed_metas = [scraper_cls.meta for scraper_cls in discover_scrapers()]
+        feed_metas.extend(
+            parser_cls.meta for parser_cls in discover_newsletter_parsers()
+        )
+        for meta in feed_metas:
             cursor.execute("SELECT id FROM websites WHERE name = ?", (meta.name,))
             if cursor.fetchone() is None:
                 cursor.execute(
@@ -133,6 +178,40 @@ def init() -> dict:
         connection.close()
 
     return config
+
+
+def insert_articles(feed_name: str, articles: Sequence[Article]) -> int:
+    db_path = Path(__file__).with_name("rss.sqlite")
+    with sqlite3.connect(db_path) as connection:
+        cursor = connection.cursor()
+        before_changes = connection.total_changes
+        cursor.execute("SELECT id FROM websites WHERE name = ?", (feed_name,))
+        row = cursor.fetchone()
+        if row is None:
+            raise RuntimeError(f"Feed {feed_name} not found in database")
+
+        website_id = row[0]
+        for article in articles:
+            published = article.published
+            if published.tzinfo is None:
+                published = published.replace(tzinfo=timezone.utc)
+            published = published.astimezone(timezone.utc)
+            cursor.execute(
+                """
+                INSERT OR IGNORE INTO news
+                    (website_id, link, title, publication_date, description)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    website_id,
+                    article.url,
+                    article.title,
+                    published.isoformat(),
+                    article.summary,
+                ),
+            )
+        connection.commit()
+        return connection.total_changes - before_changes
 
 
 def start_server(port: int, website_names: set[str]) -> None:
@@ -260,53 +339,16 @@ def start_scrapers(
             if "interval_seconds" in scraper_cls.__dict__
             else default_interval_seconds
         )
-        db_path = Path(__file__).with_name("rss.sqlite")
-
         while True:
             try:
                 since = get_latest_publication_date(scraper.meta.name)
                 articles = scraper.get_new_articles(since)
                 if articles:
-                    with sqlite3.connect(db_path) as connection:
-                        cursor = connection.cursor()
-                        before_changes = connection.total_changes
-                        cursor.execute(
-                            "SELECT id FROM websites WHERE name = ?",
-                            (scraper.meta.name,),
+                    inserted = insert_articles(scraper.meta.name, articles)
+                    if inserted:
+                        print(
+                            f"Inserted {inserted} new articles for {scraper.meta.name}"
                         )
-                        row = cursor.fetchone()
-                        if row is None:
-                            raise RuntimeError(
-                                f"Website {scraper.meta.name} not found in database"
-                            )
-
-                        website_id = row[0]
-                        for article in articles:
-                            published = article.published
-                            if published.tzinfo is None:
-                                published = published.replace(tzinfo=timezone.utc)
-                            published = published.astimezone(timezone.utc)
-                            cursor.execute(
-                                """
-                                INSERT OR IGNORE INTO news
-                                    (website_id, link, title, publication_date, description)
-                                VALUES (?, ?, ?, ?, ?)
-                                """,
-                                (
-                                    website_id,
-                                    article.url,
-                                    article.title,
-                                    published.isoformat(),
-                                    article.summary,
-                                ),
-                            )
-                        connection.commit()
-                        inserted = connection.total_changes - before_changes
-                        if inserted:
-                            print(
-                                f"Inserted {inserted} new articles for"
-                                f" {scraper.meta.name}"
-                            )
             except Exception as exc:
                 print(f"Scraper error for {scraper_cls.__name__}: {exc}")
             time.sleep(interval_seconds)
@@ -353,10 +395,134 @@ def start_scrapers(
     monitor_thread.start()
 
 
+def start_newsletter_poller(
+    parsers: list[type[NewsletterParser]],
+    config: dict,
+    default_interval_seconds: int,
+) -> None:
+    newsletter_config = config.get("newsletter")
+    if not isinstance(newsletter_config, dict):
+        return
+
+    imap_config = newsletter_config.get("imap")
+    if not isinstance(imap_config, dict):
+        return
+
+    host = imap_config.get("host")
+    username = imap_config.get("username")
+    password = imap_config.get("password")
+    if not host or not username or not password:
+        print("Newsletter IMAP configuration is incomplete; poller disabled")
+        return
+
+    port = int(imap_config.get("port", 993))
+    mailbox = str(imap_config.get("mailbox", "INBOX"))
+    processed_mailbox = str(imap_config.get("processed_mailbox", "INBOX/Newsletter"))
+    refresh_period = imap_config.get("refresh_period")
+    interval_seconds = (
+        int(refresh_period) * 60 if refresh_period else default_interval_seconds
+    )
+    parser_instances = [parser_cls() for parser_cls in parsers]
+
+    def find_parser(message: EmailMessage) -> NewsletterParser | None:
+        sender = parseaddr(message.get("From", ""))[1]
+        subject = message.get("Subject", "")
+        for parser in parser_instances:
+            if parser.matches(sender, subject):
+                return parser
+        return None
+
+    def move_message(
+        mailbox_connection: imaplib.IMAP4_SSL,
+        message_uid: str,
+    ) -> None:
+        status, _ = mailbox_connection.create(processed_mailbox)
+        if status not in {"OK", "NO"}:
+            raise RuntimeError(
+                f"Unable to create IMAP mailbox {processed_mailbox}"
+            )
+
+        status, _ = mailbox_connection.uid("COPY", message_uid, processed_mailbox)
+        if status != "OK":
+            raise RuntimeError(
+                f"Unable to move email to IMAP mailbox {processed_mailbox}"
+            )
+
+        status, _ = mailbox_connection.uid("STORE", message_uid, "+FLAGS", "\\Deleted")
+        if status != "OK":
+            raise RuntimeError("Unable to delete moved email from source mailbox")
+
+        status, _ = mailbox_connection.expunge()
+        if status != "OK":
+            raise RuntimeError("Unable to expunge moved email from source mailbox")
+
+    def poll_once() -> None:
+        with imaplib.IMAP4_SSL(str(host), port) as mailbox_connection:
+            mailbox_connection.login(str(username), str(password))
+            status, _ = mailbox_connection.select(mailbox)
+            if status != "OK":
+                raise RuntimeError(f"Unable to select IMAP mailbox {mailbox}")
+
+            status, data = mailbox_connection.uid("SEARCH", "UNSEEN")
+            if status != "OK" or not data:
+                return
+
+            for message_uid in data[0].split():
+                message_uid_text = message_uid.decode("ascii")
+                status, message_data = mailbox_connection.uid(
+                    "FETCH",
+                    message_uid_text,
+                    "(BODY.PEEK[])",
+                )
+                if status != "OK" or not message_data:
+                    continue
+
+                raw_message = next(
+                    (
+                        item[1]
+                        for item in message_data
+                        if isinstance(item, tuple) and isinstance(item[1], bytes)
+                    ),
+                    None,
+                )
+                if raw_message is None:
+                    continue
+
+                message = message_from_bytes(raw_message, policy=policy.default)
+                parser = find_parser(message)
+                if parser is None:
+                    continue
+
+                articles = parser.parse_email(message)
+                if not articles:
+                    continue
+
+                inserted = insert_articles(parser.meta.name, articles)
+                if inserted:
+                    print(
+                        f"Inserted {inserted} newsletter articles for"
+                        f" {parser.meta.name}"
+                    )
+                move_message(mailbox_connection, message_uid_text)
+
+    def run_poller() -> None:
+        while True:
+            try:
+                poll_once()
+            except Exception as exc:
+                print(f"Newsletter IMAP poller error: {exc}")
+            time.sleep(interval_seconds)
+
+    thread = threading.Thread(target=run_poller, daemon=True)
+    thread.start()
+
+
 def main() -> None:
     config = init()
     scrapers = discover_scrapers()
+    newsletter_parsers = discover_newsletter_parsers()
     website_names = {scraper.meta.name for scraper in scrapers}
+    website_names.update(parser.meta.name for parser in newsletter_parsers)
     refresh_period = (
         config.get("server", {}).get("refresh_period")
         if isinstance(config.get("server"), dict)
@@ -366,6 +532,7 @@ def main() -> None:
         int(refresh_period) * 60 if refresh_period else WebsiteScraper.interval_seconds
     )
     start_scrapers(scrapers, default_interval_seconds)
+    start_newsletter_poller(newsletter_parsers, config, default_interval_seconds)
     port = (
         config.get("server", {}).get("port")
         if isinstance(config.get("server"), dict)
