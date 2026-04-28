@@ -8,6 +8,7 @@ Scrape2RSS is a Python web server that exposes RSS feeds for websites and newsle
 - Data persistence: SQLite database.
 - All stored and handled datetimes must be in UTC.
 - Website and newsletter feeds share the existing `websites` and `news` SQLite tables.
+- `GET /` returns a plain-text list of exposed RSS feeds.
 - Keep this file up to date as the project evolves.
 
 ## Newsletter ingestion

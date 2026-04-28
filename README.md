@@ -5,6 +5,8 @@ Scrape2RSS is a Python web server that exposes RSS feeds for websites that do no
 Each website scraper or newsletter parser runs on a schedule, stores entries in SQLite, and exposes a feed at:
 `https://SERVER:PORT/FEED_NAME/`
 
+`GET /` returns a plain-text list of exposed RSS feeds for simple discovery with `curl`.
+
 ## Directory content
 
 - `scrape2rss.py`: The main server that exposes the RSS endpoints.

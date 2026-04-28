@@ -223,6 +223,14 @@ def start_server(port: int, website_names: set[str]) -> None:
             if path.startswith("/"):
                 path = path[1:]
 
+            if not path:
+                feed_index = build_feed_index(website_names)
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.end_headers()
+                self.wfile.write(feed_index)
+                return
+
             if path and path in website_names:
                 feed = build_rss_feed(path)
                 if feed is None:
@@ -244,6 +252,25 @@ def start_server(port: int, website_names: set[str]) -> None:
 
     server = HTTPServer(("", port), RSSHandler)
     server.serve_forever()
+
+
+def build_feed_index(feed_names: set[str]) -> bytes:
+    if not feed_names:
+        return b"Available RSS feeds:\n"
+
+    db_path = Path(__file__).with_name("rss.sqlite")
+    with sqlite3.connect(db_path) as connection:
+        cursor = connection.cursor()
+        placeholders = ", ".join("?" for _ in feed_names)
+        cursor.execute(
+            f"SELECT name, title FROM websites WHERE name IN ({placeholders}) ORDER BY name",
+            tuple(sorted(feed_names)),
+        )
+        rows = cursor.fetchall()
+
+    lines = ["Available RSS feeds:"]
+    lines.extend(f"{name}\t/{name}/\t{title}" for name, title in rows)
+    return ("\n".join(lines) + "\n").encode("utf-8")
 
 
 def build_rss_feed(website_name: str) -> bytes | None:
