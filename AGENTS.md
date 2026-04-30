@@ -29,6 +29,10 @@ Scrape2RSS is a Python web server that exposes RSS feeds for websites and newsle
 - `websites/qwen_ai.py`: scrapes https://qwenlm.github.io/blog/ via the JSON API at `https://qwen.ai/api/v2/article/retrieval?type=qwen_ai&language=en-US` and extracts article date/title/url/summary from `data.articles[]` using the `path`, `title`, `extra.date`, and `extra.introduction` fields. Runs once per day.
 - `websites/exe_dev.py`: scrapes https://blog.exe.dev/ by parsing blog cards (`article.post-card`) and extracts article date/title/url/summary.
 
+## Implemented newsletter parsers
+
+- `newsletter/visionia.py`: parses the Vision IA newsletter (sender `vision-ia@mail.beehiiv.com`). Each email becomes a single Article: title from `Subject`, url from the `x-newsletter` header (canonical post URL), published from `Date` (UTC), and summary set to the raw HTML body.
+
 ## Containerization
 
 - `Dockerfile`: builds and runs the app with `python:3.13-slim`, installs `requirements.txt`, exposes port `8082`, and starts `scrape2rss.py`.
