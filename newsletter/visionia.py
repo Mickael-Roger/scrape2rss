@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from email.message import EmailMessage
 from email.utils import parsedate_to_datetime
 
+from bs4 import BeautifulSoup, Tag
+
 from scrape2rss import Article, NewsletterParser, WebsiteMeta
 
 
@@ -37,7 +39,8 @@ class VisionIANewsletter(NewsletterParser):
             published = datetime.now(timezone.utc)
 
         html_part = message.get_body(preferencelist=("html",))
-        summary = html_part.get_content() if html_part is not None else None
+        raw_html = html_part.get_content() if html_part is not None else ""
+        summary = self._extract_synthesis(raw_html)
 
         return [
             Article(
@@ -48,3 +51,29 @@ class VisionIANewsletter(NewsletterParser):
                 summary=summary,
             )
         ]
+
+    @staticmethod
+    def _extract_synthesis(html: str) -> str | None:
+        if not html:
+            return None
+
+        soup = BeautifulSoup(html, "html.parser")
+        anchor = soup.find(id="aujourdhui")
+        if not isinstance(anchor, Tag):
+            return None
+
+        heading = anchor.find("h2")
+        bullets = anchor.find_next("ul")
+        if not isinstance(heading, Tag) or not isinstance(bullets, Tag):
+            return None
+
+        for tag in (heading, bullets):
+            for descendant in tag.find_all(True):
+                for attr in ("style", "class"):
+                    if attr in descendant.attrs:
+                        del descendant.attrs[attr]
+            for attr in ("style", "class"):
+                if attr in tag.attrs:
+                    del tag.attrs[attr]
+
+        return f"{heading}\n{bullets}"

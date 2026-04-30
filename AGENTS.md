@@ -31,7 +31,7 @@ Scrape2RSS is a Python web server that exposes RSS feeds for websites and newsle
 
 ## Implemented newsletter parsers
 
-- `newsletter/visionia.py`: parses the Vision IA newsletter (sender `vision-ia@mail.beehiiv.com`). Each email becomes a single Article: title from `Subject`, url from the `x-newsletter` header (canonical post URL), published from `Date` (UTC), and summary set to the raw HTML body.
+- `newsletter/visionia.py`: parses the Vision IA newsletter (sender `vision-ia@mail.beehiiv.com`). Each email becomes a single Article: title from `Subject`, url from the `x-newsletter` header (canonical post URL), published from `Date` (UTC), and summary extracted from the email's "Aujourd'hui" synthesis block (`#aujourdhui` h2 + the bullet list `ul`), stripped of inline `style`/`class` attributes for a compact HTML description.
 
 ## Containerization
 

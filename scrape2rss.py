@@ -469,6 +469,10 @@ def start_newsletter_poller(
                 f"Unable to create IMAP mailbox {processed_mailbox}"
             )
 
+        status, _ = mailbox_connection.uid("STORE", message_uid, "+FLAGS", "\\Seen")
+        if status != "OK":
+            raise RuntimeError("Unable to mark email as seen before move")
+
         status, _ = mailbox_connection.uid("COPY", message_uid, processed_mailbox)
         if status != "OK":
             raise RuntimeError(
