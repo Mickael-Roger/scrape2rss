@@ -48,7 +48,7 @@ class GradiumBlog(WebsiteScraper):
                 time_tag = card.select_one("article time")
                 if time_tag is None:
                     continue
-                date_str = time_tag.get("dateTime") or time_tag.get_text(strip=True)
+                date_str = time_tag.get("datetime") or time_tag.get_text(strip=True)
                 if not date_str:
                     continue
 

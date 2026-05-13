@@ -28,7 +28,7 @@ Scrape2RSS is a Python web server that exposes RSS feeds for websites and newsle
 - `websites/weeklyrobotics.py`: scrapes https://www.weeklyrobotics.com/archive/ by parsing issue cards (`div.issue-card`) to find issue links, then visits each issue page to extract individual news items from the article content (`div#article-content h2/h3`) with descriptions from paragraphs and images. Each news item's external source URL is extracted from the `div.learn-more-container` link that follows the item's description.
 - `websites/qwen_ai.py`: scrapes https://qwenlm.github.io/blog/ via the JSON API at `https://qwen.ai/api/v2/article/retrieval?type=qwen_ai&language=en-US` and extracts article date/title/url/summary from `data.articles[]` using the `path`, `title`, `extra.date`, and `extra.introduction` fields. Runs once per day.
 - `websites/exe_dev.py`: scrapes https://blog.exe.dev/ by parsing blog cards (`article.post-card`) and extracts article date/title/url/summary.
-- `websites/gradium.py`: scrapes https://gradium.ai/blog by parsing blog cards (`section#blog div.space-y-12 > a`) and extracts article date/title/url/summary from `article h2`, `article p.text-lightgray`, and `article time[dateTime]`.
+- `websites/gradium.py`: scrapes https://gradium.ai/blog by parsing blog cards (`section#blog div.space-y-12 > a`) and extracts article date/title/url/summary from `article h2`, `article p.text-lightgray`, and `article time[datetime]`.
 
 ## Implemented newsletter parsers
 
